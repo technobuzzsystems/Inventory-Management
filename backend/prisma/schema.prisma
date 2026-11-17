@@ -1,0 +1,470 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  SUPER_ADMIN
+  ADMIN
+  STORE_MANAGER
+  EMPLOYEE
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CategoryTargetType {
+  MACHINE
+  PRODUCT
+  GENERAL
+}
+
+enum TrackingType {
+  QUANTITY
+  SERIAL
+}
+
+enum SerialStatus {
+  AVAILABLE
+  ISSUED
+  DAMAGED
+  LOST
+  RETIRED
+}
+
+enum StockTransactionType {
+  OPENING
+  PURCHASE_IN
+  RETURN_IN
+  ISSUE_OUT
+  DIRECT_OUT
+  ADJUSTMENT_ADD
+  ADJUSTMENT_DEDUCT
+  DAMAGED
+  LOST
+}
+
+enum IssueReturnStatus {
+  PENDING
+  PARTIALLY_RETURNED
+  FULLY_RETURNED
+  OVERDUE
+  DAMAGED
+  LOST
+}
+
+enum ReturnCondition {
+  GOOD
+  DAMAGED
+  LOST
+}
+
+enum AdjustmentType {
+  ADD
+  DEDUCT
+  MARK_DAMAGED
+  MARK_LOST
+  RECOVER
+}
+
+model Role {
+  id              String           @id @default(uuid())
+  name            RoleName         @unique
+  displayName     String           @map("display_name")
+  description     String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  users           User[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id              String           @id @default(uuid())
+  code            String           @unique
+  module          String
+  description     String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String     @map("role_id")
+  permissionId String     @map("permission_id")
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model User {
+  id                 String              @id @default(uuid())
+  username           String              @unique
+  email              String              @unique
+  passwordHash       String              @map("password_hash")
+  fullName           String              @map("full_name")
+  roleId             String              @map("role_id")
+  employeeId         String?             @unique @map("employee_id")
+  refreshTokenHash   String?             @map("refresh_token_hash")
+  isActive           Boolean             @default(true) @map("is_active")
+  lastLoginAt        DateTime?           @map("last_login_at")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  role               Role                @relation(fields: [roleId], references: [id])
+  employee           Employee?           @relation(fields: [employeeId], references: [id])
+  stockTransactions  StockTransaction[]
+  issuedTransactions InventoryIssue[]    @relation("IssuedByUser")
+  receivedReturns    InventoryReturn[]   @relation("ReceivedByUser")
+  stockAdjustments   StockAdjustment[]
+  auditLogs          AuditLog[]
+
+  @@index([roleId])
+  @@map("users")
+}
+
+model Employee {
+  id                String                 @id @default(uuid())
+  employeeCode      String                 @unique @map("employee_code")
+  name              String
+  department        String
+  designation       String
+  contactNumber     String                 @map("contact_number")
+  email             String                 @unique
+  joiningDate       DateTime               @map("joining_date")
+  status            RecordStatus           @default(ACTIVE)
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+  user              User?
+  issues            InventoryIssue[]
+  returns           InventoryReturn[]
+  stockTransactions StockTransaction[]
+  heldSerialAssets  InventorySerialAsset[]
+
+  @@index([department])
+  @@index([status])
+  @@map("employees")
+}
+
+model Machine {
+  id             String          @id @default(uuid())
+  machineName    String          @map("machine_name")
+  machineCode    String          @unique @map("machine_code")
+  machineType    String          @map("machine_type")
+  description    String?
+  location       String
+  status         RecordStatus    @default(ACTIVE)
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  categories     Category[]
+  inventoryItems InventoryItem[]
+
+  @@index([machineType])
+  @@index([status])
+  @@map("machines")
+}
+
+model Category {
+  id             String             @id @default(uuid())
+  name           String
+  code           String?
+  targetType     CategoryTargetType @default(MACHINE) @map("target_type")
+  machineId      String?            @map("machine_id")
+  machineType    String?            @map("machine_type")
+  description    String?
+  status         RecordStatus       @default(ACTIVE)
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  machine        Machine?           @relation(fields: [machineId], references: [id])
+  subcategories  Subcategory[]
+  inventoryItems InventoryItem[]
+
+  @@index([machineId])
+  @@index([targetType])
+  @@index([status])
+  @@map("categories")
+}
+
+model Subcategory {
+  id             String          @id @default(uuid())
+  categoryId     String          @map("category_id")
+  name           String
+  code           String?
+  description    String?
+  status         RecordStatus    @default(ACTIVE)
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  category       Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  inventoryItems InventoryItem[]
+
+  @@unique([categoryId, name])
+  @@index([categoryId])
+  @@index([status])
+  @@map("subcategories")
+}
+
+model Supplier {
+  id                String             @id @default(uuid())
+  name              String
+  code              String             @unique
+  contactPerson     String?            @map("contact_person")
+  phone             String?
+  email             String?
+  address           String?
+  gstNumber         String?            @map("gst_number")
+  status            RecordStatus       @default(ACTIVE)
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  stockTransactions StockTransaction[]
+
+  @@map("suppliers")
+}
+
+model InventoryItem {
+  id                String                 @id @default(uuid())
+  itemName          String                 @map("item_name")
+  itemCode          String                 @unique @map("item_code")
+  toolNumber        String?                @map("tool_number")
+  machineId         String?                @map("machine_id")
+  categoryId        String                 @map("category_id")
+  subcategoryId     String?                @map("subcategory_id")
+  description       String?
+  brand             String?
+  modelNumber       String?                @map("model_number")
+  unitOfMeasurement String                 @default("PCS") @map("unit_of_measurement")
+  trackingType      TrackingType           @default(QUANTITY) @map("tracking_type")
+  minimumStockLevel Int                    @default(5) @map("minimum_stock_level")
+  openingStock      Int                    @default(0) @map("opening_stock")
+  totalStock        Int                    @default(0) @map("total_stock")
+  availableStock    Int                    @default(0) @map("available_stock")
+  issuedStock       Int                    @default(0) @map("issued_stock")
+  damagedStock      Int                    @default(0) @map("damaged_stock")
+  lostStock         Int                    @default(0) @map("lost_stock")
+  storageLocation   String?                @map("storage_location")
+  itemImage         String?                @map("item_image")
+  status            RecordStatus           @default(ACTIVE)
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+  machine           Machine?               @relation(fields: [machineId], references: [id])
+  category          Category               @relation(fields: [categoryId], references: [id])
+  subcategory       Subcategory?           @relation(fields: [subcategoryId], references: [id])
+  serialAssets      InventorySerialAsset[]
+  stockTransactions StockTransaction[]
+  issueItems        IssueItem[]
+  returnItems       ReturnItem[]
+  stockAdjustments  StockAdjustment[]
+
+  @@index([machineId])
+  @@index([categoryId])
+  @@index([subcategoryId])
+  @@index([status])
+  @@index([itemName])
+  @@map("inventory_items")
+}
+
+model InventorySerialAsset {
+  id                String        @id @default(uuid())
+  inventoryItemId   String        @map("inventory_item_id")
+  serialNumber      String        @unique @map("serial_number")
+  status            SerialStatus  @default(AVAILABLE)
+  currentEmployeeId String?       @map("current_employee_id")
+  notes             String?
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  currentEmployee   Employee?     @relation(fields: [currentEmployeeId], references: [id])
+  issueItems        IssueItem[]
+  returnItems       ReturnItem[]
+
+  @@index([inventoryItemId])
+  @@index([status])
+  @@map("inventory_serial_assets")
+}
+
+model StockTransaction {
+  id                     String               @id @default(uuid())
+  transactionRef         String               @unique @map("transaction_ref")
+  inventoryItemId        String               @map("inventory_item_id")
+  transactionType        StockTransactionType @map("transaction_type")
+  supplierId             String?              @map("supplier_id")
+  employeeId             String?              @map("employee_id")
+  issueId                String?              @map("issue_id")
+  returnId               String?              @map("return_id")
+  adjustmentId           String?              @map("adjustment_id")
+  invoiceReference       String?              @map("invoice_reference")
+  purchaseDate           DateTime?            @map("purchase_date")
+  quantity               Int
+  unitPrice              Float?               @default(0) @map("unit_price")
+  totalAmount            Float?               @default(0) @map("total_amount")
+  previousAvailableStock Int                  @map("previous_available_stock")
+  newAvailableStock      Int                  @map("new_available_stock")
+  previousTotalStock     Int                  @map("previous_total_stock")
+  newTotalStock          Int                  @map("new_total_stock")
+  remarks                String?
+  performedById          String               @map("performed_by_id")
+  idempotencyKey         String?              @unique @map("idempotency_key")
+  createdAt              DateTime             @default(now()) @map("created_at")
+  inventoryItem          InventoryItem        @relation(fields: [inventoryItemId], references: [id])
+  supplier               Supplier?            @relation(fields: [supplierId], references: [id])
+  employee               Employee?            @relation(fields: [employeeId], references: [id])
+  issue                  InventoryIssue?      @relation(fields: [issueId], references: [id])
+  returnRecord           InventoryReturn?     @relation(fields: [returnId], references: [id])
+  adjustment             StockAdjustment?     @relation(fields: [adjustmentId], references: [id])
+  performedBy            User                 @relation(fields: [performedById], references: [id])
+
+  @@index([inventoryItemId])
+  @@index([transactionType])
+  @@index([createdAt])
+  @@map("stock_transactions")
+}
+
+model InventoryIssue {
+  id                    String             @id @default(uuid())
+  issueReference        String             @unique @map("issue_reference")
+  employeeId            String             @map("employee_id")
+  department            String
+  issueDate             DateTime           @map("issue_date")
+  issueTime             String             @map("issue_time")
+  expectedReturnDate    DateTime           @map("expected_return_date")
+  actualFinalReturnDate DateTime?          @map("actual_final_return_date")
+  purposeRemarks        String?            @map("purpose_remarks")
+  issuedById            String             @map("issued_by_id")
+  status                IssueReturnStatus  @default(PENDING)
+  idempotencyKey        String?            @unique @map("idempotency_key")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
+  employee              Employee           @relation(fields: [employeeId], references: [id])
+  issuedBy              User               @relation("IssuedByUser", fields: [issuedById], references: [id])
+  items                 IssueItem[]
+  returns               InventoryReturn[]
+  stockTransactions     StockTransaction[]
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([expectedReturnDate])
+  @@index([issueDate])
+  @@map("inventory_issues")
+}
+
+model IssueItem {
+  id                       String                @id @default(uuid())
+  issueId                  String                @map("issue_id")
+  inventoryItemId          String                @map("inventory_item_id")
+  serialAssetId            String?               @map("serial_asset_id")
+  issuedQuantity           Int                   @map("issued_quantity")
+  acceptedReturnedQuantity Int                   @default(0) @map("accepted_returned_quantity")
+  damagedQuantity          Int                   @default(0) @map("damaged_quantity")
+  lostQuantity             Int                   @default(0) @map("lost_quantity")
+  pendingQuantity          Int                   @map("pending_quantity")
+  itemStatus               IssueReturnStatus     @default(PENDING) @map("item_status")
+  actualReturnDate         DateTime?             @map("actual_return_date")
+  remarks                  String?
+  createdAt                DateTime              @default(now()) @map("created_at")
+  updatedAt                DateTime              @updatedAt @map("updated_at")
+  issue                    InventoryIssue        @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  inventoryItem            InventoryItem         @relation(fields: [inventoryItemId], references: [id])
+  serialAsset              InventorySerialAsset? @relation(fields: [serialAssetId], references: [id])
+  returnItems              ReturnItem[]
+
+  @@index([issueId])
+  @@index([inventoryItemId])
+  @@index([itemStatus])
+  @@map("issue_items")
+}
+
+model InventoryReturn {
+  id                String             @id @default(uuid())
+  returnReference   String             @unique @map("return_reference")
+  issueId           String             @map("issue_id")
+  employeeId        String             @map("employee_id")
+  returnDate        DateTime           @map("return_date")
+  returnTime        String             @map("return_time")
+  receivedById      String             @map("received_by_id")
+  remarks           String?
+  idempotencyKey    String?            @unique @map("idempotency_key")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  issue             InventoryIssue     @relation(fields: [issueId], references: [id])
+  employee          Employee           @relation(fields: [employeeId], references: [id])
+  receivedBy        User               @relation("ReceivedByUser", fields: [receivedById], references: [id])
+  items             ReturnItem[]
+  stockTransactions StockTransaction[]
+
+  @@index([issueId])
+  @@index([employeeId])
+  @@index([returnDate])
+  @@map("inventory_returns")
+}
+
+model ReturnItem {
+  id               String                @id @default(uuid())
+  returnId         String                @map("return_id")
+  issueItemId      String                @map("issue_item_id")
+  inventoryItemId  String                @map("inventory_item_id")
+  serialAssetId    String?               @map("serial_asset_id")
+  returnedQuantity Int                   @map("returned_quantity")
+  condition        ReturnCondition       @default(GOOD)
+  remarks          String?
+  createdAt        DateTime              @default(now()) @map("created_at")
+  returnRecord     InventoryReturn       @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  issueItem        IssueItem             @relation(fields: [issueItemId], references: [id])
+  inventoryItem    InventoryItem         @relation(fields: [inventoryItemId], references: [id])
+  serialAsset      InventorySerialAsset? @relation(fields: [serialAssetId], references: [id])
+
+  @@index([returnId])
+  @@index([issueItemId])
+  @@index([inventoryItemId])
+  @@map("return_items")
+}
+
+model StockAdjustment {
+  id                String             @id @default(uuid())
+  adjustmentRef     String             @unique @map("adjustment_ref")
+  inventoryItemId   String             @map("inventory_item_id")
+  adjustmentType    AdjustmentType     @map("adjustment_type")
+  quantity          Int
+  previousAvailable Int                @map("previous_available")
+  newAvailable      Int                @map("new_available")
+  reason            String
+  authorizedById    String             @map("authorized_by_id")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  inventoryItem     InventoryItem      @relation(fields: [inventoryItemId], references: [id])
+  authorizedBy      User               @relation(fields: [authorizedById], references: [id])
+  stockTransactions StockTransaction[]
+
+  @@index([inventoryItemId])
+  @@map("stock_adjustments")
+}
+
+model AuditLog {
+  id                   String   @id @default(uuid())
+  action               String
+  entityType           String   @map("entity_type")
+  entityId             String?  @map("entity_id")
+  transactionReference String?  @map("transaction_reference")
+  inventoryItemId      String?  @map("inventory_item_id")
+  previousQuantity     Int?     @map("previous_quantity")
+  updatedQuantity      Int?     @map("updated_quantity")
+  oldValues            Json?    @map("old_values")
+  newValues            Json?    @map("new_values")
+  description          String?
+  userId               String   @map("user_id")
+  ipAddress            String?  @map("ip_address")
+  createdAt            DateTime @default(now()) @map("created_at")
+  user                 User     @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}

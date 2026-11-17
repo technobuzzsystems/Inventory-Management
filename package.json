@@ -1,0 +1,15 @@
+{
+  "name": "industrial-inventory-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Complete Industrial Inventory & Stock Management System (Angular + Node.js/Express + Prisma + PostgreSQL)",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run start",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "db:migrate": "npm --prefix backend run prisma:migrate",
+    "db:seed": "npm --prefix backend run prisma:seed",
+    "test:scenarios": "npm --prefix backend run test:scenarios"
+  }
+}
